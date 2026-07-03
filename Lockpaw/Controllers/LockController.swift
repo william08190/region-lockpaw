@@ -291,7 +291,7 @@ class LockController: ObservableObject {
         inputBlocker.stopBlocking()
 
         Task { @MainActor in
-            let authenticated = await authenticator.authenticate()
+            let result = await authenticator.authenticate()
 
             guard state == .unlocking else {
                 authenticationInProgress = false
@@ -306,13 +306,16 @@ class LockController: ObservableObject {
             authenticationInProgress = false
             isAuthenticating = false
 
-            if authenticated {
+            switch result {
+            case .success:
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                 unlockSucceeded = true
                 try? await Task.sleep(nanoseconds: Constants.Timing.unlockSuccessAnimNs)
                 guard !Task.isCancelled else { return }
                 unlock()
-            } else {
+            case .cancelled:
+                handleAuthCancellation()
+            case .failed:
                 handleAuthFailure()
             }
         }
@@ -338,7 +341,7 @@ class LockController: ObservableObject {
         inputBlocker.stopBlocking()
 
         Task { @MainActor in
-            let authenticated = await authenticator.authenticateWithPassword()
+            let result = await authenticator.authenticateWithPassword()
 
             guard state == .unlocking else {
                 authenticationInProgress = false
@@ -353,13 +356,16 @@ class LockController: ObservableObject {
             authenticationInProgress = false
             isAuthenticating = false
 
-            if authenticated {
+            switch result {
+            case .success:
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                 unlockSucceeded = true
                 try? await Task.sleep(nanoseconds: Constants.Timing.unlockSuccessAnimNs)
                 guard !Task.isCancelled else { return }
                 unlock()
-            } else {
+            case .cancelled:
+                handleAuthCancellation()
+            case .failed:
                 handleAuthFailure()
             }
         }
@@ -395,6 +401,15 @@ class LockController: ObservableObject {
         }
         transitionTo(.locked)
         scheduleErrorClear()
+    }
+
+    private func handleAuthCancellation() {
+        overlayManager.blockSystemDialogs()
+        if activeLockMode == .fullScreen {
+            inputBlocker.startBlocking()
+        }
+        lastError = nil
+        transitionTo(.locked)
     }
 
     private func finishRegionSelection(_ rect: NSRect?) {
@@ -440,7 +455,6 @@ class LockController: ObservableObject {
             }
         }
 
-        startAccessibilityMonitoring()
         sessionWasLost = false
         transitionTo(.locked)
 
@@ -519,7 +533,10 @@ class LockController: ObservableObject {
         accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor [weak self] in
-                guard let self, self.state == .locked, !AccessibilityChecker.isEnabled else { return }
+                guard let self,
+                      self.state == .locked,
+                      self.activeLockMode == .fullScreen,
+                      !AccessibilityChecker.isEnabled else { return }
                 logger.critical("Accessibility revoked while locked — force unlocking")
                 self.lastError = "Accessibility permission revoked"
                 try? await Task.sleep(nanoseconds: Constants.Timing.errorDisplayBeforeForceUnlockNs)
