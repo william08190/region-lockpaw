@@ -67,32 +67,12 @@ class OverlayWindowManager {
         regionAllowedFrame = nil
         regionUnlockHandler = nil
 
-        if animated {
-            let windowsToClose = windows
-            windows.removeAll()
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.35
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                for window in windowsToClose {
-                    window.animator().alphaValue = 0
-                }
-            }, completionHandler: {
-                // Delay cleanup so animation objects are fully released
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    for window in windowsToClose {
-                        window.orderOut(nil)
-                        window.contentView = nil
-                    }
-                }
-            })
-        } else {
-            for window in windows {
-                window.orderOut(nil)
-                window.contentView = nil
-                window.close()
-            }
-            windows.removeAll()
+        for window in windows {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
         }
+        windows.removeAll()
     }
 
     func allowSystemDialogs() {
@@ -123,8 +103,7 @@ class OverlayWindowManager {
                 contentRect: frame,
                 styleMask: .borderless,
                 backing: .buffered,
-                defer: false,
-                screen: screen
+                defer: false
             )
             window.setFrame(frame, display: true)
             window.level = shieldLevel
@@ -133,6 +112,7 @@ class OverlayWindowManager {
             window.backgroundColor = .clear
             window.ignoresMouseEvents = !isPrimary
             window.hasShadow = false
+            window.isReleasedWhenClosed = false
 
             // NSHostingView defaults to autoresizingMask=0 (no flex), which can cause
             // the SwiftUI content to not fill the window on external/scaled displays.
@@ -145,14 +125,7 @@ class OverlayWindowManager {
                 logger.warning("Content view size mismatch — expected \(frame.size.debugDescription), got \(hostingView.frame.size.debugDescription)")
             }
 
-            window.alphaValue = 0
             window.orderFrontRegardless()
-
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.3
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                window.animator().alphaValue = 1
-            }
 
             windows.append(window)
         }
@@ -190,8 +163,7 @@ class OverlayWindowManager {
             contentRect: frame,
             styleMask: .borderless,
             backing: .buffered,
-            defer: false,
-            screen: screen
+            defer: false
         )
         window.setFrame(frame, display: true)
         window.level = shieldLevel
@@ -200,6 +172,7 @@ class OverlayWindowManager {
         window.backgroundColor = .clear
         window.ignoresMouseEvents = false
         window.hasShadow = false
+        window.isReleasedWhenClosed = false
 
         let hostingView = NSHostingView(rootView: RegionMaskView(onUnlock: onUnlock))
         hostingView.autoresizingMask = [.width, .height]
@@ -303,12 +276,10 @@ class OverlayWindowManager {
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 logger.info("Screen parameters changed — recreating overlay windows")
-                // Do NOT call window.close() — closing during a fade-in animation
-                // causes EXC_BAD_ACCESS in _NSWindowTransformAnimation dealloc.
                 for window in self.windows {
-                    window.animator().alphaValue = 0
                     window.orderOut(nil)
                     window.contentView = nil
+                    window.close()
                 }
                 self.windows.removeAll()
                 if self.regionAllowedFrame != nil {
@@ -369,7 +340,9 @@ private struct RegionMaskView: View {
 
                 if proxy.size.width >= 150 && proxy.size.height >= 90 {
                     Button {
-                        onUnlock()
+                        DispatchQueue.main.async {
+                            onUnlock()
+                        }
                     } label: {
                         Label("Unlock", systemImage: "lock.open.fill")
                             .font(.system(size: 13, weight: .semibold))
@@ -386,7 +359,9 @@ private struct RegionMaskView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                onUnlock()
+                DispatchQueue.main.async {
+                    onUnlock()
+                }
             }
         }
     }
