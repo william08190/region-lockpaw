@@ -110,11 +110,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
             showOnboarding()
-        } else if !AccessibilityChecker.isEnabled {
-            // TCC was reset (e.g., after update) — re-show onboarding to guide re-granting
-            logger.notice("Accessibility revoked — re-showing onboarding")
-            UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-            showOnboarding()
         }
     }
 

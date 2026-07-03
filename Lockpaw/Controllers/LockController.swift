@@ -236,11 +236,6 @@ class LockController: ObservableObject {
 
     func lockRegion() {
         guard transitionTo(.locking) else { return }
-        guard AccessibilityChecker.isEnabled else {
-            AccessibilityChecker.promptIfNeeded()
-            transitionTo(.unlocked)
-            return
-        }
 
         activeLockMode = .region
         let frontmost = NSWorkspace.shared.frontmostApplication
