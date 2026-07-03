@@ -61,6 +61,7 @@ final class RegionSelectionController {
 
 private final class RegionSelectionWindow: NSWindow {
     private let onComplete: (NSRect?) -> Void
+    private var didComplete = false
 
     init(screen: NSScreen, onComplete: @escaping (NSRect?) -> Void) {
         self.onComplete = onComplete
@@ -68,8 +69,7 @@ private final class RegionSelectionWindow: NSWindow {
             contentRect: screen.frame,
             styleMask: .borderless,
             backing: .buffered,
-            defer: false,
-            screen: screen
+            defer: false
         )
 
         setFrame(screen.frame, display: true)
@@ -84,7 +84,7 @@ private final class RegionSelectionWindow: NSWindow {
         contentView = RegionSelectionView(frame: NSRect(origin: .zero, size: screen.frame.size)) { [weak self] localRect in
             guard let self else { return }
             guard let localRect else {
-                self.onComplete(nil)
+                self.complete(with: nil)
                 return
             }
             let global = NSRect(
@@ -93,7 +93,7 @@ private final class RegionSelectionWindow: NSWindow {
                 width: localRect.width,
                 height: localRect.height
             )
-            self.onComplete(global)
+            self.complete(with: global)
         }
     }
 
@@ -102,9 +102,17 @@ private final class RegionSelectionWindow: NSWindow {
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
-            onComplete(nil)
+            complete(with: nil)
         } else {
             super.keyDown(with: event)
+        }
+    }
+
+    private func complete(with rect: NSRect?) {
+        guard !didComplete else { return }
+        didComplete = true
+        DispatchQueue.main.async { [onComplete] in
+            onComplete(rect)
         }
     }
 }
