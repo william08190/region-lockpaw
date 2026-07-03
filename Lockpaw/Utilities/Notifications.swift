@@ -3,6 +3,7 @@ import Foundation
 /// All notification names in one place.
 extension Notification.Name {
     static let lockpawLock = Notification.Name("lockpawLock")
+    static let lockpawLockRegion = Notification.Name("lockpawLockRegion")
     static let lockpawUnlock = Notification.Name("lockpawUnlock")
     static let lockpawUnlockPassword = Notification.Name("lockpawUnlockPassword")
     static let lockpawInputBlockerFailed = Notification.Name("lockpawInputBlockerFailed")

@@ -254,12 +254,21 @@ struct SettingsView: View {
             }
 
             SettingsPanel {
-                SettingsRow("Lock now", subtitle: "Start the lock screen immediately.") {
-                    Button {
-                        NotificationCenter.default.post(name: .lockpawLock, object: nil)
-                    } label: {
-                        Text("Lock Now")
-                            .padding(.horizontal, 8)
+                SettingsRow("Lock now", subtitle: "Start a full-screen lock or drag a usable region.") {
+                    HStack(spacing: 8) {
+                        Button {
+                            NotificationCenter.default.post(name: .lockpawLock, object: nil)
+                        } label: {
+                            Label("Lock Screen", systemImage: "lock.fill")
+                                .padding(.horizontal, 8)
+                        }
+
+                        Button {
+                            NotificationCenter.default.post(name: .lockpawLockRegion, object: nil)
+                        } label: {
+                            Label("Lock Region\u{2026}", systemImage: "rectangle.dashed")
+                                .padding(.horizontal, 8)
+                        }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)

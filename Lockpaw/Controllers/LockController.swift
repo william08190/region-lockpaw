@@ -42,6 +42,7 @@ class LockController: ObservableObject {
     private var accessibilityCheckTimer: Timer?
     private var errorClearTask: Task<Void, Never>?
     private var toggleObserver: Any?
+    private var lockRegionObserver: Any?
     private var pingObserver: Any?
     private var authenticationInProgress = false
     private var sessionWasLost = false
@@ -66,6 +67,16 @@ class LockController: ObservableObject {
                         self.quickUnlock()
                     }
                 }
+            }
+        }
+
+        lockRegionObserver = NotificationCenter.default.addObserver(
+            forName: .lockpawLockRegion, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.state == .unlocked else { return }
+                self.lockRegion()
             }
         }
 
@@ -146,6 +157,7 @@ class LockController: ObservableObject {
 
     deinit {
         if let obs = toggleObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = lockRegionObserver { NotificationCenter.default.removeObserver(obs) }
         timer?.invalidate()
         accessibilityCheckTimer?.invalidate()
         errorClearTask?.cancel()
