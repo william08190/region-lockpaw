@@ -39,17 +39,6 @@ This is a public fork-based development project built from [Lockpaw](https://git
 
 ## Install
 
-### Download
-
-Grab the latest signed & notarized DMG from [getlockpaw.com](https://getlockpaw.com) or [GitHub Releases](https://github.com/sorkila/lockpaw/releases).
-
-### Homebrew
-
-```bash
-brew tap sorkila/lockpaw
-brew install --cask lockpaw
-```
-
 ### Build from source
 
 ```bash
@@ -61,6 +50,8 @@ xcodebuild -scheme Lockpaw -configuration Release build
 ```
 
 On first launch, grant **Accessibility** when prompted. The Lockpaw icon appears in your menu bar.
+
+This fork does not yet publish signed DMGs or Homebrew casks. Upstream Lockpaw releases remain available from [sorkila/lockpaw](https://github.com/sorkila/lockpaw), but those builds do not include region lock.
 
 <br>
 
@@ -82,7 +73,7 @@ The lock screen is intentionally minimal. Near-black canvas. Subtle radial glow.
 
 **Hotkey** — `CGEvent.tapCreate` with `.listenOnly` on a dedicated background thread. Bypasses the LSUIElement activation issue that affects Carbon hotkeys in menu bar apps. Requires Accessibility permission.
 
-**Input blocking** — separate `CGEventTap` intercepts all keyboard, scroll, and tablet events system-wide while locked. Mouse events pass through to the overlay (SwiftUI buttons need clicks). If macOS disables the tap, it re-enables synchronously in the callback.
+**Input blocking** — full-screen lock keeps upstream Lockpaw's `CGEventTap` keyboard, scroll, and tablet blocking. Region lock intentionally does not start that blocker, so keyboard input continues to the foreground application inside the selected rectangle.
 
 **Window level** — `CGShieldingWindowLevel()`, the highest level in the system. Above Spotlight, Notification Center, screen savers, everything.
 
