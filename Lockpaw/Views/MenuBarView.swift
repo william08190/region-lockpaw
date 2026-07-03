@@ -12,6 +12,12 @@ struct MenuBarView: View {
                     Label("Lock Screen", systemImage: "lock.fill")
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+
+                Button {
+                    controller.lockRegion()
+                } label: {
+                    Label("Lock Region\u{2026}", systemImage: "rectangle.dashed")
+                }
             } else {
                 Button {
                     controller.requestUnlock()

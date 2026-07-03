@@ -1,44 +1,27 @@
-<p align="center">
-  <img src="assets/hero.png" alt="Lockpaw — lock your screen, agents keep working" width="840" />
-</p>
-
-<h1 align="center">Lockpaw</h1>
+<h1 align="center">Region Lockpaw</h1>
 
 <p align="center">
-  <strong>One hotkey covers your screen. One hotkey uncovers it. Everything keeps running.</strong><br>
-  <em>No sleep. No display disconnect. No process interruption. The screen glows when your agent needs you.</em>
+  <strong>Drag a usable rectangle on macOS. The selected area stays interactive; the rest of the screen is masked until authentication.</strong>
 </p>
 
 <p align="center">
-  <a href="https://getlockpaw.com"><img src="https://img.shields.io/badge/Download-Free-00D4AA?style=flat-square&logo=apple&logoColor=fff" alt="Download"></a>
-  <a href="https://github.com/sorkila/lockpaw/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/sorkila/lockpaw/ci.yml?branch=main&style=flat-square&label=CI&logo=github&logoColor=fff" alt="CI"></a>
-  <a href="https://github.com/sorkila/lockpaw/releases/latest"><img src="https://img.shields.io/github/v/release/sorkila/lockpaw?style=flat-square&color=111&labelColor=111&label=Release" alt="Release"></a>
   <img src="https://img.shields.io/badge/macOS%2014+-111?style=flat-square&logo=apple&logoColor=fff" alt="macOS 14+">
   <img src="https://img.shields.io/badge/Swift%205.9-111?style=flat-square&logo=swift&logoColor=F05138" alt="Swift 5.9">
   <img src="https://img.shields.io/badge/MIT-111?style=flat-square" alt="MIT License">
-  <img src="https://img.shields.io/github/stars/sorkila/lockpaw?style=flat-square&color=111&labelColor=111" alt="Stars">
-</p>
-
-<p align="center">
-  <img src="assets/demo.gif" alt="Lockpaw demo — lock the screen while your agent works, get a glow when it needs you" width="600">
 </p>
 
 ---
 
-> You could set up Amphetamine, configure Hot Corners, tweak energy settings, and adjust your screen saver. Or you could press ⌘⇧L.
+This is a public fork-based development project built from [Lockpaw](https://github.com/sorkila/lockpaw). The original Lockpaw full-screen lock remains available; this fork adds a region-lock mode.
 
 ## Features
 
-- ⌨️ **One hotkey** — lock and unlock with ⌘⇧L (customizable)
-- 🔒 **Touch ID unlock** — or password fallback, just like your Mac
-- 🖥️ **Every screen covered** — all displays, auto-detects new monitors
-- 🤖 **Agents keep running** — AI coding tools, builds, downloads, SSH sessions
-- 🔔 **Agent alerts** — the locked screen glows when Claude Code, Codex, or Gemini needs you
-- 😴 **Prevents sleep** — IOKit assertion keeps your Mac awake while locked
-- 📦 **10 MB** — native Swift, no Electron
-- 🚫 **No analytics** — no data leaves your Mac, no accounts; the only network call is the signed update check
-- 🐕🐈 **Dog or cat mode** — choose the metallic origami dog or cat for the lock screen
-- ⚙️ **Native Settings** — lock screen, shortcuts, updates, permissions, and about in one quiet window
+- **Region lock** - choose `Lock Region...` from the menu bar, then drag a rectangle.
+- **Mouse works inside the rectangle** - no overlay window is placed over the selected area.
+- **Keyboard works inside the active app** - region lock does not start Lockpaw's keyboard-blocking event tap, so normal keyboard input continues to the foreground application.
+- **Frame outside is masked** - the rest of the selected screen is covered with four mask windows; other displays are fully masked.
+- **Authentication to leave the mask** - clicking the masked area triggers the existing Touch ID / macOS password unlock flow.
+- **Original Lockpaw screen lock remains** - `Lock Screen` still uses the upstream full-screen privacy lock behavior.
 
 <br>
 
@@ -46,42 +29,11 @@
 
 | Action | How |
 |--------|-----|
-| Lock | Your hotkey (default `Cmd+Shift+L`) |
-| Quick unlock | Same hotkey |
-| Fallback unlock | Click *Authenticate with Touch ID* at the bottom of the lock screen |
-| Settings | Menu bar → Settings… |
-| Change hotkey | Settings → Shortcuts → click to record |
-| Change mascot | Settings → Lock Screen → Mascot |
-
-<br>
-
-## Agent alerts
-
-Lock your screen and walk away — when your AI agent pauses for permission or finishes,
-the locked screen **glows from across the room** and a notification fires. You stay
-covered (and private) until *you* unlock. The glow is always silent; turn on a sound in
-**Settings → General** if you want one (off by default for shared offices).
-
-**Easiest:** open **Settings → General → Connect your agent** and click your agent —
-done. Prefer the terminal? Lockpaw ships a tiny `lockpaw` command-line tool
-(`Lockpaw.app/Contents/SharedSupport/lockpaw`); one command wires everything up,
-including installing itself into `~/.local/bin` (add `--print` to just see the snippet):
-
-| Agent | Setup | What it hooks |
-|-------|-------|---------------|
-| **Claude Code** | `lockpaw install-hook claude` | `Notification` + `Stop` hooks in `~/.claude/settings.json` (honors `$CLAUDE_CONFIG_DIR`) |
-| **Codex CLI** | `lockpaw install-hook codex` | `notify` in `~/.codex/config.toml` |
-| **Gemini CLI** | `lockpaw install-hook gemini` | prints a hook snippet for `~/.gemini/settings.json` |
-| **Anything else** | append `; lockpaw ping` to your command | runs after your agent finishes |
-
-The hooks reference `~/.local/bin/lockpaw` by path, so they work no matter what's on
-your PATH, and keep working when the app moves or updates. Re-running `install-hook`
-upgrades older hook entries in place; existing foreign hooks are never clobbered, and
-a `.bak` backup is saved next to any config it touches. `lockpaw install-cli` is still
-there if you just want the command on your PATH.
-
-Under the hood, `lockpaw ping` posts a local notification that Lockpaw listens for — it
-never launches the app if it isn't already running.
+| Region lock | Menu bar icon -> `Lock Region...`, then drag the usable rectangle |
+| Full-screen lock | Menu bar icon -> `Lock Screen`, or the configured hotkey |
+| Unlock region mask | Click the masked area and authenticate |
+| Unlock full-screen lock | Use the hotkey, Touch ID button, or password button |
+| Settings | Menu bar -> `Settings...` |
 
 <br>
 
@@ -102,8 +54,8 @@ brew install --cask lockpaw
 
 ```bash
 brew install xcodegen
-git clone https://github.com/sorkila/lockpaw.git
-cd lockpaw
+git clone https://github.com/william08190/region-lockpaw.git
+cd region-lockpaw
 xcodegen generate
 xcodebuild -scheme Lockpaw -configuration Release build
 ```

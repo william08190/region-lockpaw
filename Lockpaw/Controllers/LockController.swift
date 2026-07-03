@@ -6,6 +6,11 @@ import os.log
 
 private let logger = Logger(subsystem: "com.eriknielsen.lockpaw", category: "LockController")
 
+private enum ActiveLockMode {
+    case fullScreen
+    case region
+}
+
 @MainActor
 class LockController: ObservableObject {
     @Published private(set) var state: LockState = .unlocked
@@ -24,6 +29,7 @@ class LockController: ObservableObject {
     @Published private(set) var agentAttention = false
 
     private let overlayManager = OverlayWindowManager()
+    private let regionSelectionController = RegionSelectionController()
     private let inputBlocker = InputBlocker()
     private let authenticator = Authenticator()
     private let sleepPreventer = SleepPreventer()
@@ -41,6 +47,8 @@ class LockController: ObservableObject {
     private var sessionWasLost = false
     private var lastAuthFailTime: Date?
     private var lastPingTime: Date?
+    private var activeLockMode: ActiveLockMode = .fullScreen
+    private weak var regionFocusedApplication: NSRunningApplication?
 
     init() {
         toggleObserver = NotificationCenter.default.addObserver(
@@ -67,8 +75,10 @@ class LockController: ObservableObject {
             guard let self else { return }
             Task { @MainActor [weak self] in
                 guard let self, self.state == .locked else { return }
-                self.inputBlocker.stopBlocking()
-                self.inputBlocker.startBlocking()
+                if self.activeLockMode == .fullScreen {
+                    self.inputBlocker.stopBlocking()
+                    self.inputBlocker.startBlocking()
+                }
                 self.overlayManager.blockSystemDialogs()
             }
         }
@@ -86,7 +96,9 @@ class LockController: ObservableObject {
                         self.authenticationInProgress = false
                         self.isAuthenticating = false
                         self.overlayManager.blockSystemDialogs()
-                        self.inputBlocker.startBlocking()
+                        if self.activeLockMode == .fullScreen {
+                            self.inputBlocker.startBlocking()
+                        }
                         self.transitionTo(.locked)
                         self.lastError = "Session interrupted — try again"
                         self.scheduleErrorClear()
@@ -102,8 +114,10 @@ class LockController: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.state == .locked, self.sessionWasLost else { return }
                 self.sessionWasLost = false
-                self.inputBlocker.stopBlocking()
-                self.inputBlocker.startBlocking()
+                if self.activeLockMode == .fullScreen {
+                    self.inputBlocker.stopBlocking()
+                    self.inputBlocker.startBlocking()
+                }
                 self.overlayManager.blockSystemDialogs()
             }
         }
@@ -152,6 +166,8 @@ class LockController: ObservableObject {
             return
         }
 
+        activeLockMode = .fullScreen
+        regionFocusedApplication = nil
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         sleepPreventer.preventSleep()
 
@@ -206,6 +222,39 @@ class LockController: ObservableObject {
         transitionTo(.locked)
     }
 
+    func lockRegion() {
+        guard transitionTo(.locking) else { return }
+        guard AccessibilityChecker.isEnabled else {
+            AccessibilityChecker.promptIfNeeded()
+            transitionTo(.unlocked)
+            return
+        }
+
+        activeLockMode = .region
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if frontmost?.bundleIdentifier != Bundle.main.bundleIdentifier {
+            regionFocusedApplication = frontmost
+        } else {
+            regionFocusedApplication = nil
+        }
+
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        let didStartSelection = regionSelectionController.begin { [weak self] rect in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                self?.finishRegionSelection(rect)
+            }
+        }
+
+        if !didStartSelection {
+            activeLockMode = .fullScreen
+            regionFocusedApplication = nil
+            transitionTo(.unlocked)
+            lastError = "No screens available"
+            scheduleErrorClear()
+        }
+    }
+
     /// Quick unlock via hotkey — no auth.
     func quickUnlock() {
         guard state == .locked, !authenticationInProgress else { return }
@@ -241,7 +290,9 @@ class LockController: ObservableObject {
                 authenticationInProgress = false
                 isAuthenticating = false
                 overlayManager.blockSystemDialogs()
-                inputBlocker.startBlocking()
+                if activeLockMode == .fullScreen {
+                    inputBlocker.startBlocking()
+                }
                 return
             }
 
@@ -286,7 +337,9 @@ class LockController: ObservableObject {
                 authenticationInProgress = false
                 isAuthenticating = false
                 overlayManager.blockSystemDialogs()
-                inputBlocker.startBlocking()
+                if activeLockMode == .fullScreen {
+                    inputBlocker.startBlocking()
+                }
                 return
             }
 
@@ -330,9 +383,65 @@ class LockController: ObservableObject {
         lastError = failCount >= Constants.Timing.maxAuthAttempts ? "Too many attempts. Wait \(Int(Constants.Timing.authRateLimitCooldown)) seconds." : "Try again"
 
         overlayManager.blockSystemDialogs()
-        inputBlocker.startBlocking()
+        if activeLockMode == .fullScreen {
+            inputBlocker.startBlocking()
+        }
         transitionTo(.locked)
         scheduleErrorClear()
+    }
+
+    private func finishRegionSelection(_ rect: NSRect?) {
+        guard state == .locking else { return }
+        guard let rect else {
+            activeLockMode = .fullScreen
+            regionFocusedApplication = nil
+            transitionTo(.unlocked)
+            return
+        }
+
+        sleepPreventer.preventSleep()
+        guard overlayManager.showRegionOverlay(allowedFrame: rect, onUnlock: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.requestUnlock()
+            }
+        }) else {
+            logger.error("Region lock failed - no overlay masks created")
+            sleepPreventer.allowSleep()
+            activeLockMode = .fullScreen
+            regionFocusedApplication = nil
+            transitionTo(.unlocked)
+            lastError = "No screens available"
+            scheduleErrorClear()
+            return
+        }
+
+        stopTimer()
+        lockStartTime = Date()
+        failCount = 0
+        lastError = nil
+        unlockSucceeded = false
+        lastAuthFailTime = nil
+        errorClearTask?.cancel()
+
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.state == .locked || self.state == .unlocking,
+                      let start = self.lockStartTime else { return }
+                self.elapsedTime = Date().timeIntervalSince(start)
+            }
+        }
+
+        startAccessibilityMonitoring()
+        sessionWasLost = false
+        transitionTo(.locked)
+
+        if #available(macOS 14.0, *) {
+            regionFocusedApplication?.activate()
+        } else {
+            regionFocusedApplication?.activate(options: [.activateIgnoringOtherApps])
+        }
     }
 
     private func scheduleErrorClear() {
@@ -364,6 +473,8 @@ class LockController: ObservableObject {
         overlayManager.dismissOverlay(animated: true)
         inputBlocker.stopBlocking()
         sleepPreventer.allowSleep()
+        activeLockMode = .fullScreen
+        regionFocusedApplication = nil
     }
 
     private func forceUnlock() {
@@ -380,6 +491,8 @@ class LockController: ObservableObject {
         overlayManager.dismissOverlay()
         inputBlocker.stopBlocking()
         sleepPreventer.allowSleep()
+        activeLockMode = .fullScreen
+        regionFocusedApplication = nil
     }
 
     private func stopTimer() {

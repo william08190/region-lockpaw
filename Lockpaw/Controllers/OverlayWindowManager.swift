@@ -16,6 +16,8 @@ class OverlayWindowManager {
     private var screenObserver: Any?
     private var sessionObserver: Any?
     private var contentFactory: ((Int, Bool) -> AnyView)?
+    private var regionAllowedFrame: NSRect?
+    private var regionUnlockHandler: (() -> Void)?
     private var screenChangeWork: DispatchWorkItem?
     private var mouseMoveMonitors: [Any] = []
     private var cursorRehideTimer: Timer?
@@ -24,8 +26,10 @@ class OverlayWindowManager {
 
     @discardableResult
     func showOverlay(contentFactory factory: @escaping (Int, Bool) -> AnyView) -> Bool {
-        contentFactory = factory
         dismissOverlay()
+        contentFactory = factory
+        regionAllowedFrame = nil
+        regionUnlockHandler = nil
         createWindows()
         guard !windows.isEmpty else {
             logger.error("showOverlay failed — no windows created")
@@ -37,10 +41,31 @@ class OverlayWindowManager {
         return true
     }
 
+    @discardableResult
+    func showRegionOverlay(allowedFrame: NSRect, onUnlock: @escaping () -> Void) -> Bool {
+        dismissOverlay()
+        contentFactory = nil
+        regionAllowedFrame = allowedFrame
+        regionUnlockHandler = onUnlock
+        createRegionWindows()
+        guard !windows.isEmpty else {
+            logger.error("showRegionOverlay failed - no mask windows created")
+            regionAllowedFrame = nil
+            regionUnlockHandler = nil
+            return false
+        }
+        startObservingScreenChanges()
+        startObservingSessionChanges()
+        return true
+    }
+
     func dismissOverlay(animated: Bool = false) {
         stopObservingScreenChanges()
         stopObservingSessionChanges()
         stopCursorConcealment()
+        contentFactory = nil
+        regionAllowedFrame = nil
+        regionUnlockHandler = nil
 
         if animated {
             let windowsToClose = windows
@@ -133,6 +158,90 @@ class OverlayWindowManager {
         }
     }
 
+    private func createRegionWindows() {
+        guard let allowedFrame = regionAllowedFrame, let regionUnlockHandler else {
+            logger.error("No region configuration to display overlay")
+            return
+        }
+
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else {
+            logger.critical("No screens available - cannot create region overlay")
+            return
+        }
+
+        for screen in screens {
+            let screenFrame = screen.frame
+            let allowedOnScreen = allowedFrame.intersection(screenFrame)
+            let masks = maskFrames(for: screenFrame, excluding: allowedOnScreen)
+
+            logger.info("Creating region overlay - screen: \(screen.localizedName), masks: \(masks.count), allowed: \(allowedOnScreen.debugDescription)")
+
+            for frame in masks where frame.width > 0 && frame.height > 0 {
+                let window = makeRegionMaskWindow(frame: frame, screen: screen, onUnlock: regionUnlockHandler)
+                window.orderFrontRegardless()
+                windows.append(window)
+            }
+        }
+    }
+
+    private func makeRegionMaskWindow(frame: NSRect, screen: NSScreen, onUnlock: @escaping () -> Void) -> NSWindow {
+        let window = OverlayWindow(
+            contentRect: frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false,
+            screen: screen
+        )
+        window.setFrame(frame, display: true)
+        window.level = shieldLevel
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.ignoresMouseEvents = false
+        window.hasShadow = false
+
+        let hostingView = NSHostingView(rootView: RegionMaskView(onUnlock: onUnlock))
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.frame = NSRect(origin: .zero, size: frame.size)
+        window.contentView = hostingView
+
+        return window
+    }
+
+    private func maskFrames(for screenFrame: NSRect, excluding allowedFrame: NSRect) -> [NSRect] {
+        guard !allowedFrame.isNull, allowedFrame.width > 0, allowedFrame.height > 0 else {
+            return [screenFrame]
+        }
+
+        let top = NSRect(
+            x: screenFrame.minX,
+            y: allowedFrame.maxY,
+            width: screenFrame.width,
+            height: screenFrame.maxY - allowedFrame.maxY
+        )
+        let bottom = NSRect(
+            x: screenFrame.minX,
+            y: screenFrame.minY,
+            width: screenFrame.width,
+            height: allowedFrame.minY - screenFrame.minY
+        )
+        let left = NSRect(
+            x: screenFrame.minX,
+            y: allowedFrame.minY,
+            width: allowedFrame.minX - screenFrame.minX,
+            height: allowedFrame.height
+        )
+        let right = NSRect(
+            x: allowedFrame.maxX,
+            y: allowedFrame.minY,
+            width: screenFrame.maxX - allowedFrame.maxX,
+            height: allowedFrame.height
+        )
+
+        return [top, bottom, left, right].filter { $0.width > 0 && $0.height > 0 }
+    }
+
     // MARK: - Cursor concealment
 
     /// Hide the pointer while locked, but never trap the user: the cursor reappears
@@ -202,7 +311,11 @@ class OverlayWindowManager {
                     window.contentView = nil
                 }
                 self.windows.removeAll()
-                self.createWindows()
+                if self.regionAllowedFrame != nil {
+                    self.createRegionWindows()
+                } else {
+                    self.createWindows()
+                }
             }
             self.screenChangeWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
@@ -242,6 +355,39 @@ class OverlayWindowManager {
             window.orderOut(nil)
             window.contentView = nil
             window.close()
+        }
+    }
+}
+
+private struct RegionMaskView: View {
+    let onUnlock: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.opacity(0.72)
+
+                if proxy.size.width >= 150 && proxy.size.height >= 90 {
+                    Button {
+                        onUnlock()
+                    } label: {
+                        Label("Unlock", systemImage: "lock.open.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay {
+                                Capsule().stroke(.white.opacity(0.22), lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onUnlock()
+            }
         }
     }
 }
