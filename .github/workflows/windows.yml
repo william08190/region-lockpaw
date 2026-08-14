@@ -39,9 +39,13 @@ jobs:
       - name: Runtime smoke test
         shell: powershell
         run: |
-          & ./build/windows-amd64/RegionLockpaw.exe --self-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Region Lockpaw self-test failed with exit code $LASTEXITCODE"
+          $Process = Start-Process `
+            -FilePath ./build/windows-amd64/RegionLockpaw.exe `
+            -ArgumentList '--self-test' `
+            -Wait `
+            -PassThru
+          if ($Process.ExitCode -ne 0) {
+            throw "Region Lockpaw self-test failed with exit code $($Process.ExitCode)"
           }
 
       - name: Upload installer
