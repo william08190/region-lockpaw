@@ -53,6 +53,13 @@ On first launch, grant **Accessibility** when prompted. The Lockpaw icon appears
 
 This fork does not yet publish signed DMGs or Homebrew casks. Upstream Lockpaw releases remain available from [sorkila/lockpaw](https://github.com/sorkila/lockpaw), but those builds do not include region lock.
 
+### Windows
+
+A native Windows 10/11 x64 implementation and per-user EXE installer live in
+[`windows/`](windows/README.md). It provides the same drag-to-keep region model,
+multi-display masks, a notification-area menu, `Ctrl+Alt+L`, start-at-sign-in,
+and Windows secure sign-in unlock without requiring macOS frameworks.
+
 <br>
 
 ## Design
