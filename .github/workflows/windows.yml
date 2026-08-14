@@ -1,0 +1,59 @@
+name: Windows
+
+on:
+  push:
+    branches: [main, feature/region-lock]
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: windows/go.sum
+
+      - name: Install NSIS
+        shell: powershell
+        run: choco install nsis --yes --no-progress
+
+      - name: Build application and installer
+        shell: powershell
+        run: ./scripts/build.ps1 -Version 1.0.0
+
+      - name: Runtime smoke test
+        shell: powershell
+        run: |
+          $Process = Start-Process `
+            -FilePath ./build/windows-amd64/RegionLockpaw.exe `
+            -ArgumentList '--self-test' `
+            -Wait `
+            -PassThru
+          if ($Process.ExitCode -ne 0) {
+            throw "Region Lockpaw self-test failed with exit code $($Process.ExitCode)"
+          }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: RegionLockpaw-Windows-x64
+          path: |
+            windows/dist/RegionLockpawSetup-1.0.0-x64.exe
+            windows/dist/SHA256SUMS.txt
+            windows/build/windows-amd64/RegionLockpaw.exe
+          if-no-files-found: error
